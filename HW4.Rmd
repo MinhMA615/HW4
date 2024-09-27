@@ -1,0 +1,110 @@
+---
+title: "HW4"
+author: "Truc Minh Nguyen"
+output: pdf_document
+date: "2024-09-27"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(data.table)
+library(dplyr)
+library(ggplot2)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r}
+#a. read the data from 1985 to 2023
+file_root<-"https://www.ndbc.noaa.gov/view_text_file.php?filename=44013h" 
+year<-as.character(1985:2023)
+tail<- ".txt.gz&dir=data/historical/stdmet/" 
+all_buoys <- data.frame()
+  for(i in year){
+    path<-paste0(file_root,i,tail) 
+    header=scan(path,what= 'character',nlines=1)
+    buoy<-try(fread(path,header=FALSE,skip=2))
+    
+    #check if fread was sucessful
+    if(inherits(buoy,"try-error")){
+      warning(paste("Failed to read data for year",i))
+      next
+    }
+    buoy <- as.data.frame(buoy)
+    
+    #adjust column names if there's a mismatch
+    if(length(header)!=ncol(buoy)){
+      
+      #add placeholder if there are more data columns than headers
+      if(ncol(buoy)>length(header)){
+        extra <- ncol(buoy)-length(header)
+        header <- c(header,paste0("extra",1:extra))
+      }else{
+        header <- header[1:ncol(buoy)]
+      }
+    }
+    colnames(buoy)<-header
+    buoy <- buoy |> mutate(TIDE=rep(NA,nrow(buoy)))
+    
+    #Part B. of HW4: Replace placeholder values of 999 with NAs for certain columns 
+    buoy <- buoy|> mutate(
+    MWD =na_if(MWD,999),
+    DEWP=na_if(DEWP,999),
+    ATMP=na_if(ATMP,999),
+    WTMP=na_if(WTMP,999))
+    all_buoys <- bind_rows(all_buoys,buoy)
+  }
+
+all_buoys
+
+```
+```{r}
+#Part C, data visualizationa and modeling
+
+#EDA
+ggplot(all_buoys, aes(x=YY))+
+  geom_point(alpha = 0.5,aes(y=ATMP, color = "Air Temperature"),na.rm = TRUE)+
+  geom_point(alpha = 0.5, aes(y=WTMP, color = "Water Temperature"), na.rm = TRUE)+
+  labs(title = "Air and Water Temperature vs. Time", x = "Year", y = "Temperature (degrees C)")+
+  theme_minimal()+
+  scale_color_manual(name="Legend", values=c("Air Temperature"="green", "Water Temperature"="blue"))
+
+#Linear Model, I don't think BAR is a good predictor for ATMP because the data seems kind of binary
+#Or perhaps, linear regression isn't the best model for this. I tried log to bring points closer 
+#but it still doesn't seem quite right...
+
+model <- lm(ATMP~log(BAR), data=all_buoys)
+summary(model)
+ggplot(all_buoys, aes(x=log(BAR), y=ATMP))+
+  geom_point()+
+  labs(title="log(BAR) vs. ATMP", x="log(BAR)", y="ATMP")
+plot(model)
+```
+
+```{r}
+#Part D incorporating rain data
+rain <- read.csv("Rainfall.csv",header=TRUE)
+rain$DATE <- as.POSIXct(rain$DATE, format = "%Y%m%d %H:%M")
+
+ggplot(rain, aes(x=DATE, y=HPCP))+
+  geom_point(alpha = 0.5)+
+  labs(title = "HCPC vs. Year", x = "Year", y = "HPCP(in)")+
+  theme_minimal()
+
+model_rain <- lm(HPCP~DATE, data=rain)
+summary(model_rain)
+plot(model_rain)
+
+#I honestly don't think I'm doing this right so I don't know what to compare to. But in general just 
+#based on the initial EDA plots, I am not able to see any trend in rain fall through time. However, I 
+#do think global warming is a concern and we should be making environmental choices with that issue in
+#mind. I do have sympathy for the meteorologists, I'm sure it's hard to find the correct predictors at
+#the correct time as "mother nature" can be ironically pretty unpredictable...
+```
+
+
